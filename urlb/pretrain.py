@@ -157,6 +157,8 @@ class Workspace:
                                       self.cfg.action_repeat)
 
         episode_step, episode_reward = 0, 0
+        ## skill step
+        skill_step = 0
         time_step = self.train_env.reset()
         meta = self.agent.init_meta()
         self.replay_storage.add(time_step, meta)
@@ -192,13 +194,20 @@ class Workspace:
                 episode_step = 0
                 episode_reward = 0
 
+                ## skill step
+                skill_step = 0
+
             # try to evaluate
             if eval_every_step(self.global_step):
                 self.logger.log('eval_total_time', self.timer.total_time(),
                                 self.global_frame)
                 self.eval()
 
-            meta = self.agent.update_meta(meta, self.global_step, time_step)
+            # meta = self.agent.update_meta(meta, self.global_step, time_step)
+
+            ### change meta
+            meta, skill_step = self.agent.change_meta(meta, time_step.observation, skill_step)
+
             # sample action
             with torch.no_grad(), utils.eval_mode(self.agent):
                 action = self.agent.act(time_step.observation,

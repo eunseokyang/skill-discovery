@@ -120,11 +120,16 @@ class Workspace:
             self._replay_iter = iter(self.replay_loader)
         return self._replay_iter
 
-    def eval(self):
+    def eval(self, select_meta):
+        ## update skill
+        update_skill_every_step = 50
         step, episode, total_reward = 0, 0, 0
+        ## intrinsic reward
+        intrinsic_total_reward = 0
         eval_until_episode = utils.Until(self.cfg.num_eval_episodes)
         meta = self.agent.init_meta()
         while eval_until_episode(episode):
+            observations, skills = [], []
             time_step = self.eval_env.reset()
             self.video_recorder.init(self.eval_env, enabled=(episode == 0))
             while not time_step.last():
@@ -134,18 +139,29 @@ class Workspace:
                                             self.global_step,
                                             eval_mode=True)
                 time_step = self.eval_env.step(action)
+                observations.append(time_step.observation)
+                skills.append(meta['skill'])
                 self.video_recorder.record(self.eval_env)
                 total_reward += time_step.reward
                 step += 1
 
+                ## update skill
+                if select_meta and step % update_skill_every_step:
+                    meta = self.agent.init_meta()
+
+            obs = torch.as_tensor(np.array(observations), device=self.device)
+            skills = torch.as_tensor(np.array(skills), device=self.device)
+            intrinsic_total_reward += self.agent.compute_intr_reward(skills, obs, None).detach().sum().item()
+
             episode += 1
-            self.video_recorder.save(f'{self.global_frame}.mp4')
+            self.video_recorder.save(f'{self.global_frame}_{str(select_meta)}.mp4')
 
         with self.logger.log_and_dump_ctx(self.global_frame, ty='eval') as log:
             log('episode_reward', total_reward / episode)
             log('episode_length', step * self.cfg.action_repeat / episode)
             log('episode', self.global_episode)
             log('step', self.global_step)
+            log('intrinsic_reward', intrinsic_total_reward / episode)
 
     def train(self):
         # predicates
@@ -201,7 +217,9 @@ class Workspace:
             if eval_every_step(self.global_step):
                 self.logger.log('eval_total_time', self.timer.total_time(),
                                 self.global_frame)
-                self.eval()
+                                
+                self.eval(select_meta=True)
+                self.eval(select_meta=False)
 
             # meta = self.agent.update_meta(meta, self.global_step, time_step)
 

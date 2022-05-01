@@ -70,7 +70,8 @@ class DIAYNAgent(DDPGAgent):
     ## change meta
     def change_meta(self, meta, obs, step):
         step_threshold = 10
-        threshold = 0.8
+        p = 0.9
+        threshold = np.log(self.skill_dim) + np.log(p)
         
         if step > step_threshold:
             obs = torch.as_tensor(obs, device=self.device).unsqueeze(0)

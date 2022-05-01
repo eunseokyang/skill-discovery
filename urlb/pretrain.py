@@ -122,9 +122,10 @@ class Workspace:
 
     def eval(self, select_meta):
         ## update skill
-        update_skill_every_step = 50
+        update_skill_every_step = 100
         step, episode, total_reward = 0, 0, 0
         ## intrinsic reward
+        intrinsic_rewards = []
         intrinsic_total_reward = 0
         eval_until_episode = utils.Until(self.cfg.num_eval_episodes)
         meta = self.agent.init_meta()
@@ -151,10 +152,17 @@ class Workspace:
 
             obs = torch.as_tensor(np.array(observations), device=self.device)
             skills = torch.as_tensor(np.array(skills), device=self.device)
-            intrinsic_total_reward += self.agent.compute_intr_reward(skills, obs, None).detach().sum().item()
+            intrinsic_rewards.append(self.agent.compute_intr_reward(skills, obs, None).detach().cpu().squeeze(1).numpy())
 
             episode += 1
             self.video_recorder.save(f'{self.global_frame}_{str(select_meta)}.mp4')
+
+        intrinsic_rewards = np.array(intrinsic_rewards).T
+        save_txt_dir = (self.work_dir / 'intr_reward')
+        save_txt_dir.mkdir(exist_ok=True)
+        np.savetxt(save_txt_dir / f'{self.global_frame}_{str(select_meta)}.csv', intrinsic_rewards, delimiter=',')
+
+        intrinsic_total_reward = intrinsic_rewards.sum()
 
         with self.logger.log_and_dump_ctx(self.global_frame, ty='eval') as log:
             log('episode_reward', total_reward / episode)
@@ -175,6 +183,7 @@ class Workspace:
         episode_step, episode_reward = 0, 0
         ## skill step
         skill_step = 0
+        meta_changed_cnt = 0
         time_step = self.train_env.reset()
         meta = self.agent.init_meta()
         self.replay_storage.add(time_step, meta)
@@ -199,6 +208,8 @@ class Workspace:
                         log('buffer_size', len(self.replay_storage))
                         log('step', self.global_step)
 
+                        log('meta_used', meta_used_cnt)
+
                 # reset env
                 time_step = self.train_env.reset()
                 meta = self.agent.init_meta()
@@ -212,6 +223,7 @@ class Workspace:
 
                 ## skill step
                 skill_step = 0
+                meta_used_cnt = 0
 
             # try to evaluate
             if eval_every_step(self.global_step):
@@ -225,6 +237,8 @@ class Workspace:
 
             ### change meta
             meta, skill_step = self.agent.change_meta(meta, time_step.observation, skill_step)
+            if skill_step == 0:
+                meta_used_cnt += 1
 
             # sample action
             with torch.no_grad(), utils.eval_mode(self.agent):

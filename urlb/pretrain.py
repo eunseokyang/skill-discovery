@@ -120,16 +120,69 @@ class Workspace:
             self._replay_iter = iter(self.replay_loader)
         return self._replay_iter
 
+    def check_skills(self):
+        ## update skill
+        # update_skill_every_step = 100
+        step, episode, total_reward = 0, 0, 0
+        ## intrinsic reward
+        intrinsic_rewards = []
+        intrinsic_total_reward = 0
+        # eval_until_episode = utils.Until(self.cfg.num_eval_episodes)
+        # meta = self.agent.init_meta()
+        for i in range(self.agent.skill_dim):
+            meta = self.agent.set_meta(i)
+            observations, skills = [], []
+            time_step = self.eval_env.reset()
+            self.video_recorder.init(self.eval_env, enabled=(episode == 0))
+            while not time_step.last():
+                with torch.no_grad(), utils.eval_mode(self.agent):
+                    action = self.agent.act(time_step.observation,
+                                            meta,
+                                            self.global_step,
+                                            eval_mode=True)
+                time_step = self.eval_env.step(action)
+                # observations.append(time_step.observation)
+                # skills.append(meta['skill'])
+                self.video_recorder.record(self.eval_env)
+                total_reward += time_step.reward
+                step += 1
+
+                ## update skill
+                # if select_meta and step % update_skill_every_step:
+                    # meta = self.agent.init_meta()
+
+            # obs = torch.as_tensor(np.array(observations), device=self.device)
+            # skills = torch.as_tensor(np.array(skills), device=self.device)
+            # intrinsic_rewards.append(self.agent.compute_intr_reward(skills, obs, None).detach().cpu().squeeze(1).numpy())
+            
+            # episode += 1
+            self.video_recorder.save(f'{self.global_frame}_{str(i)}.mp4')
+
+        # intrinsic_rewards = np.array(intrinsic_rewards).T
+        # save_txt_dir = (self.work_dir / 'intr_reward')
+        # save_txt_dir.mkdir(exist_ok=True)
+        # np.savetxt(save_txt_dir / f'{self.global_frame}_{str(select_meta)}.csv', intrinsic_rewards, delimiter=',')
+
+        # intrinsic_total_reward = intrinsic_rewards.sum()
+
+        # with self.logger.log_and_dump_ctx(self.global_frame, ty='eval') as log:
+        #     log('episode_reward', total_reward / episode)
+        #     log('episode_length', step * self.cfg.action_repeat / episode)
+        #     log('episode', self.global_episode)
+        #     log('step', self.global_step)
+        #     log('intrinsic_reward', intrinsic_total_reward / episode)
+
     def eval(self, select_meta):
         ## update skill
         update_skill_every_step = 100
         step, episode, total_reward = 0, 0, 0
         ## intrinsic reward
-        intrinsic_rewards = []
+        intrinsic_rewards, which_skill = [], []
         intrinsic_total_reward = 0
         eval_until_episode = utils.Until(self.cfg.num_eval_episodes)
         meta = self.agent.init_meta()
         while eval_until_episode(episode):
+            meta = self.agent.init_meta()
             observations, skills = [], []
             time_step = self.eval_env.reset()
             self.video_recorder.init(self.eval_env, enabled=(episode == 0))
@@ -147,8 +200,10 @@ class Workspace:
                 step += 1
 
                 ## update skill
-                if select_meta and step % update_skill_every_step:
+                if select_meta and step % update_skill_every_step == 0:
                     meta = self.agent.init_meta()
+
+            which_skill.append([np.argmax(skill) for skill in skills])
 
             obs = torch.as_tensor(np.array(observations), device=self.device)
             skills = torch.as_tensor(np.array(skills), device=self.device)
@@ -160,7 +215,12 @@ class Workspace:
         intrinsic_rewards = np.array(intrinsic_rewards).T
         save_txt_dir = (self.work_dir / 'intr_reward')
         save_txt_dir.mkdir(exist_ok=True)
-        np.savetxt(save_txt_dir / f'{self.global_frame}_{str(select_meta)}.csv', intrinsic_rewards, delimiter=',')
+        np.savetxt(save_txt_dir / f'{self.global_frame}_{str(select_meta)}.csv', intrinsic_rewards, fmt='%2.4f', delimiter=',')
+
+        which_skill = np.array(which_skill).T
+        save_txt_dir = (self.work_dir / 'which_skill')
+        save_txt_dir.mkdir(exist_ok=True)
+        np.savetxt(save_txt_dir / f'{self.global_frame}_{str(select_meta)}.csv', which_skill, fmt='%i', delimiter=',')
 
         intrinsic_total_reward = intrinsic_rewards.sum()
 
@@ -208,7 +268,7 @@ class Workspace:
                         log('buffer_size', len(self.replay_storage))
                         log('step', self.global_step)
 
-                        log('meta_used', meta_used_cnt)
+                        log('meta_changed', meta_changed_cnt)
 
                 # reset env
                 time_step = self.train_env.reset()
@@ -223,7 +283,7 @@ class Workspace:
 
                 ## skill step
                 skill_step = 0
-                meta_used_cnt = 0
+                meta_changed_cnt = 0
 
             # try to evaluate
             if eval_every_step(self.global_step):
@@ -231,14 +291,17 @@ class Workspace:
                                 self.global_frame)
                                 
                 self.eval(select_meta=True)
-                self.eval(select_meta=False)
+                # self.eval(select_meta=False)
+
+            if self.global_step > 0 and self.global_step % 100000 == 0:
+                self.check_skills()
 
             # meta = self.agent.update_meta(meta, self.global_step, time_step)
 
             ### change meta
-            meta, skill_step = self.agent.change_meta(meta, time_step.observation, skill_step)
-            if skill_step == 0:
-                meta_used_cnt += 1
+            meta, skill_step, is_changed = self.agent.change_meta(meta, time_step.observation, skill_step)
+            if is_changed:
+                meta_changed_cnt += 1
 
             # sample action
             with torch.no_grad(), utils.eval_mode(self.agent):

@@ -67,20 +67,30 @@ class DIAYNAgent(DDPGAgent):
             return self.init_meta()
         return meta
 
+    def set_meta(self, i):
+        skill = np.zeros(self.skill_dim, dtype=np.float32)
+        skill[i] = 1.0
+        meta = OrderedDict()
+        meta['skill'] = skill
+        return meta
+
     ## change meta
     def change_meta(self, meta, obs, step):
         step_threshold = 10
         p = 0.9
         threshold = np.log(self.skill_dim) + np.log(p)
-        
-        if step > step_threshold:
-            obs = torch.as_tensor(obs, device=self.device).unsqueeze(0)
-            skill = torch.as_tensor(meta['skill']).unsqueeze(0)
-            intr_reward = self.compute_intr_reward(skill, obs, step).detach().item()
-            if intr_reward > threshold:
-                return self.init_meta(), 0
 
-        return meta, step+1
+        obs = torch.as_tensor(obs, device=self.device).unsqueeze(0)
+        skill = torch.as_tensor(meta['skill']).unsqueeze(0)
+        intr_reward = self.compute_intr_reward(skill, obs, step).detach().item()
+
+        if intr_reward > threshold:
+            step += 1
+
+        if step >= step_threshold:
+            return self.init_meta(), 0, True
+
+        return meta, step, False
 
     def update_diayn(self, skill, next_obs, step):
         metrics = dict()

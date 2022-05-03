@@ -137,10 +137,13 @@ class Workspace:
             self._extra_replay_iter = iter(self.extra_replay_loader)
         return self._extra_replay_iter
 
-    def eval(self):
+    def eval(self, is_extra):
         step, episode, total_reward = 0, 0, 0
         eval_until_episode = utils.Until(self.cfg.num_eval_episodes)
-        meta = self.agent.init_meta()
+        if is_extra:
+            meta = self.agent.init_extra_meta()
+        else:
+            meta = self.agent.init_meta()
         while eval_until_episode(episode):
             time_step = self.eval_env.reset()
             self.video_recorder.init(self.eval_env, enabled=(episode == 0))
@@ -156,7 +159,7 @@ class Workspace:
                 step += 1
 
             episode += 1
-            self.video_recorder.save(f'{self.global_frame}.mp4')
+            self.video_recorder.save(f'{self.global_frame}_extra_{is_extra}.mp4')
 
         with self.logger.log_and_dump_ctx(self.global_frame, ty='eval') as log:
             log('episode_reward', total_reward / episode)
@@ -238,7 +241,8 @@ class Workspace:
             if eval_every_step(self.global_step):
                 self.logger.log('eval_total_time', self.timer.total_time(),
                                 self.global_frame)
-                self.eval()
+                self.eval(is_extra=True)
+                self.eval(is_extra=False)
             
             if self.extra_mode:
                 ## TODO: update extra skills?

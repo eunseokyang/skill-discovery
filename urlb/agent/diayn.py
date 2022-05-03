@@ -92,13 +92,19 @@ class DIAYNAgent(DDPGAgent):
 
         return metrics
 
-    def compute_intr_reward(self, skill, next_obs, step):
-        z_hat = torch.argmax(skill, dim=1)
+    def compute_intr_reward(self, skill, next_obs, step, is_extra_mode):
         d_pred = self.diayn(next_obs)
         d_pred_log_softmax = F.log_softmax(d_pred, dim=1)
-        _, pred_z = torch.max(d_pred_log_softmax, dim=1, keepdim=True)
-        reward = d_pred_log_softmax[torch.arange(d_pred.shape[0]),
-                                    z_hat] - math.log(1 / self.skill_dim)
+
+        if is_extra_mode:
+            div_sum = F.kl_div(d_pred_log_softmax, skill, reduction='sum')
+            reward = -div_sum / d_pred.shape[0]
+        else:
+            z_hat = torch.argmax(skill, dim=1)
+            _, pred_z = torch.max(d_pred_log_softmax, dim=1, keepdim=True)
+            reward = d_pred_log_softmax[torch.arange(d_pred.shape[0]),
+                                        z_hat] - math.log(1 / self.skill_dim)
+
         reward = reward.reshape(-1, 1)
 
         return reward * self.diayn_scale
@@ -141,7 +147,7 @@ class DIAYNAgent(DDPGAgent):
                 metrics.update(self.update_diayn(skill, next_obs, step))
 
             with torch.no_grad():
-                intr_reward = self.compute_intr_reward(skill, next_obs, step)
+                intr_reward = self.compute_intr_reward(skill, next_obs, step, is_extra_mode)
 
             if self.use_tb or self.use_wandb:
                 metrics['intr_reward'] = intr_reward.mean().item()

@@ -62,6 +62,12 @@ class DIAYNAgent(DDPGAgent):
         meta['skill'] = skill
         return meta
 
+    def init_extra_meta(self):
+        skill = np.full(self.skill_dim, 1/self.skill_dim, dtype=np.float32)
+        meta = OrderedDict()
+        meta['skill'] = skill
+        return meta
+
     def update_meta(self, meta, global_step, time_step):
         if global_step % self.update_skill_every_step == 0:
             return self.init_meta()
@@ -114,7 +120,7 @@ class DIAYNAgent(DDPGAgent):
                                             pred_z.size())[0]
         return d_loss, df_accuracy
 
-    def update(self, replay_iter, step):
+    def update(self, replay_iter, step, is_extra_mode):
         metrics = dict()
 
         if step % self.update_every_steps != 0:
@@ -130,7 +136,9 @@ class DIAYNAgent(DDPGAgent):
         next_obs = self.aug_and_encode(next_obs)
 
         if self.reward_free:
-            metrics.update(self.update_diayn(skill, next_obs, step))
+            # do not update discriminator when skill is extra
+            if not is_extra_mode:
+                metrics.update(self.update_diayn(skill, next_obs, step))
 
             with torch.no_grad():
                 intr_reward = self.compute_intr_reward(skill, next_obs, step)

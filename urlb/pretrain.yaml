@@ -15,7 +15,8 @@ num_train_frames: 2000010
 num_seed_frames: 4000
 # eval
 eval_every_frames: 10000
-num_eval_episodes: 10
+# num_eval_episodes: 10
+num_eval_episodes: 1
 # snapshot
 snapshots: [100000, 500000, 1000000, 2000000]
 snapshot_dir: ../../../models/${obs_type}/${domain}/${agent.name}/${seed}
@@ -25,6 +26,16 @@ replay_buffer_num_workers: 4
 batch_size: ${agent.batch_size}
 nstep: ${agent.nstep}
 update_encoder: true # should always be true for pre-training
+
+## replay buffer for extra skills
+extra_replay_buffer_size: 100000
+extra_replay_buffer_num_workers: 4
+extra_batch_size: ${agent.batch_size}
+extra_nstep: ${agent.nstep}
+extra_update_encoder: true
+## extra
+extra_every_frames: 10000
+
 # misc
 seed: 1
 device: cuda

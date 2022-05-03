@@ -80,13 +80,24 @@ class Workspace:
         self.replay_storage = ReplayBufferStorage(data_specs, meta_specs,
                                                   self.work_dir / 'buffer')
 
+        self.extra_replay_storage = ReplayBufferStorage(data_specs, meta_specs,
+                                                        self.work_dir / 'extra_buffer')
+
         # create replay buffer
         self.replay_loader = make_replay_loader(self.replay_storage,
                                                 cfg.replay_buffer_size,
                                                 cfg.batch_size,
                                                 cfg.replay_buffer_num_workers,
                                                 False, cfg.nstep, cfg.discount)
+
+        self.extra_replay_loader = make_replay_loader(self.extra_replay_storage,
+                                                      cfg.extra_replay_buffer_size,
+                                                      cfg.extra_batch_size,
+                                                      cfg.extra_replay_buffer_num_workers,
+                                                      False, cfg.extra_nstep, cfg.discount)
+                                        
         self._replay_iter = None
+        self._extra_replay_iter = None
 
         # create video recorders
         self.video_recorder = VideoRecorder(
@@ -119,6 +130,12 @@ class Workspace:
         if self._replay_iter is None:
             self._replay_iter = iter(self.replay_loader)
         return self._replay_iter
+
+    @property
+    def extra_replay_iter(self):
+        if self._extra_replay_iter is None:
+            self._extra_replay_iter = iter(self.extra_replay_loader)
+        return self._extra_replay_iter
 
     def eval(self):
         step, episode, total_reward = 0, 0, 0
@@ -155,17 +172,31 @@ class Workspace:
                                       self.cfg.action_repeat)
         eval_every_step = utils.Every(self.cfg.eval_every_frames,
                                       self.cfg.action_repeat)
+        extra_every_step = utils.Every(self.cfg.extra_every_frames,
+                                       self.cfg.action_repeat)
 
         episode_step, episode_reward = 0, 0
         time_step = self.train_env.reset()
         meta = self.agent.init_meta()
+        extra_meta = self.agent.init_extra_meta()
+
+        self.extra_mode = False
+        meta_use = meta
+
         self.replay_storage.add(time_step, meta)
         self.train_video_recorder.init(time_step.observation)
         metrics = None
         while train_until_step(self.global_step):
+            if extra_every_step(self.global_step):
+                self.extra_mode = True
+                meta_use = extra_meta
+
             if time_step.last():
                 self._global_episode += 1
-                self.train_video_recorder.save(f'{self.global_frame}.mp4')
+                if self.extra_mode:
+                    self.train_video_recorder.save(f'{self.global_frame}_extra.mp4')
+                else:
+                    self.train_video_recorder.save(f'{self.global_frame}.mp4')
                 # wait until all the metrics schema is populated
                 if metrics is not None:
                     # log stats
@@ -179,12 +210,23 @@ class Workspace:
                         log('episode_length', episode_frame)
                         log('episode', self.global_episode)
                         log('buffer_size', len(self.replay_storage))
+                        log('extra_buffer_size', len(self.extra_replay_storage))
                         log('step', self.global_step)
+                
+                ## turn back to normal mode
+                if self.extra_mode:
+                    self.extra_mode = False
+                    meta_use = meta
 
                 # reset env
                 time_step = self.train_env.reset()
-                meta = self.agent.init_meta()
-                self.replay_storage.add(time_step, meta)
+                
+                if self.extra_mode:
+                    extra_meta = self.agent.init_extra_meta()
+                else:
+                    meta = self.agent.init_meta()
+
+                self.replay_storage.add(time_step, meta_use)
                 self.train_video_recorder.init(time_step.observation)
                 # try to save snapshot
                 if self.global_frame in self.cfg.snapshots:
@@ -197,24 +239,36 @@ class Workspace:
                 self.logger.log('eval_total_time', self.timer.total_time(),
                                 self.global_frame)
                 self.eval()
+            
+            if self.extra_mode:
+                ## TODO: update extra skills?
+                pass
+            else:
+                ## TODO: how to update skills?
+                meta_use = self.agent.update_meta(meta_use, self.global_step, time_step)
 
-            meta = self.agent.update_meta(meta, self.global_step, time_step)
             # sample action
             with torch.no_grad(), utils.eval_mode(self.agent):
                 action = self.agent.act(time_step.observation,
-                                        meta,
+                                        meta_use,
                                         self.global_step,
                                         eval_mode=False)
 
             # try to update the agent
             if not seed_until_step(self.global_step):
-                metrics = self.agent.update(self.replay_iter, self.global_step)
+                if self.extra_mode:
+                    metrics = self.agent.update(self.extra_replay_iter, self.global_step, self.extra_mode)
+                else:
+                    metrics = self.agent.update(self.replay_iter, self.global_step, self.extra_mode)
                 self.logger.log_metrics(metrics, self.global_frame, ty='train')
 
             # take env step
             time_step = self.train_env.step(action)
             episode_reward += time_step.reward
-            self.replay_storage.add(time_step, meta)
+            if self.extra_mode:
+                self.extra_replay_storage.add(time_step, meta_use)
+            else:
+                self.replay_storage.add(time_step, meta_use)
             self.train_video_recorder.record(time_step.observation)
             episode_step += 1
             self._global_step += 1

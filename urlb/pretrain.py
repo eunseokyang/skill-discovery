@@ -187,10 +187,6 @@ class Workspace:
         self.train_video_recorder.init(time_step.observation)
         metrics = None
         while train_until_step(self.global_step):
-            if extra_every_step(self.global_step):
-                self.extra_mode = True
-                meta_use = extra_meta
-
             if time_step.last():
                 self._global_episode += 1
                 if self.extra_mode:
@@ -234,6 +230,10 @@ class Workspace:
                 episode_step = 0
                 episode_reward = 0
 
+            if extra_every_step(self.global_step):
+                self.extra_mode = True
+                meta_use = extra_meta
+
             # try to evaluate
             if eval_every_step(self.global_step):
                 self.logger.log('eval_total_time', self.timer.total_time(),
@@ -242,7 +242,7 @@ class Workspace:
             
             if self.extra_mode:
                 ## TODO: update extra skills?
-                pass
+                "pass"
             else:
                 ## TODO: how to update skills?
                 meta_use = self.agent.update_meta(meta_use, self.global_step, time_step)

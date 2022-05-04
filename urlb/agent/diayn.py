@@ -30,11 +30,12 @@ class DIAYN(nn.Module):
 
 class DIAYNAgent(DDPGAgent):
     def __init__(self, update_skill_every_step, skill_dim, diayn_scale,
-                 update_encoder, **kwargs):
+                 update_encoder, disc_noise, **kwargs):
         self.skill_dim = skill_dim
         self.update_skill_every_step = update_skill_every_step
         self.diayn_scale = diayn_scale
         self.update_encoder = update_encoder
+        self.disc_noise = disc_noise
         # increase obs shape to include skill dim
         kwargs["meta_dim"] = self.skill_dim
 
@@ -113,6 +114,8 @@ class DIAYNAgent(DDPGAgent):
         """
         DF Loss
         """
+        ## Add some noise to fool discriminator
+        next_state = next_state + (self.disc_noise * torch.randn(*next_state.shape)).to(self.device)
         z_hat = torch.argmax(skill, dim=1)
         d_pred = self.diayn(next_state)
         d_pred_log_softmax = F.log_softmax(d_pred, dim=1)

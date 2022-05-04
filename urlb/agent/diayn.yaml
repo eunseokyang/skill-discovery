@@ -23,3 +23,5 @@ nstep: 3
 batch_size: 1024
 init_critic: true
 update_encoder: ${update_encoder}
+# noise for discriminator
+disc_noise: 0.3

@@ -137,16 +137,23 @@ class Workspace:
             self._extra_replay_iter = iter(self.extra_replay_loader)
         return self._extra_replay_iter
 
-    def save_tracking_csv(self, arr, dirname, fname, fmt):
+    def save_tracking_csv(self, arr, dirname, fname, fmt='%.18e'):
         save_txt_dir = (self.work_dir / dirname)
         save_txt_dir.mkdir(exist_ok=True)
         np.savetxt(save_txt_dir / f'{self.global_frame}_{fname}.csv', arr, fmt=fmt, delimiter=',')
+
+    def save_tracking_np(self, arr, dirname, fname):
+        save_txt_dir = (self.work_dir / dirname)
+        save_txt_dir.mkdir(exist_ok=True)
+        np.save(save_txt_dir / f'{self.global_frame}_{fname}.npy', arr)
 
     def eval(self, is_extra):
         step, episode, total_reward = 0, 0, 0
         ## intrinsic reward
         intrinsic_reward_list = []
         intrinsic_total_reward = 0
+
+        observation_list = []
 
         eval_until_episode = utils.Until(self.cfg.num_eval_episodes)
         if is_extra:
@@ -172,6 +179,8 @@ class Workspace:
                 total_reward += time_step.reward
                 step += 1
 
+            observation_list.append(observations)
+
             obs = torch.as_tensor(np.array(observations), device=self.device)
             skills = torch.as_tensor(np.array(skills), device=self.device)
             intrinsic_reward = self.agent.compute_intr_reward(skills, obs, None, is_extra).detach().cpu().squeeze(1).numpy()
@@ -183,7 +192,10 @@ class Workspace:
         intrinsic_reward_list = np.array(intrinsic_reward_list)
         intrinsic_total_reward = np.sum(intrinsic_reward_list)
 
+        # (trajectory_len, num_eval_episode)
         self.save_tracking_csv(intrinsic_reward_list.T, dirname='intr_reward', fname=str(is_extra), fmt='%2.4f')
+        # (trajectory_len, num_eval_episode, obs_dim)
+        self.save_tracking_np(np.array(observation_list), dirname='obs', fname=str(is_extra))
 
         with self.logger.log_and_dump_ctx(self.global_frame, ty='eval') as log:
             log('episode_intrinsic_reward', intrinsic_total_reward / episode)

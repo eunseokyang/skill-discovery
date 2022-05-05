@@ -98,8 +98,7 @@ class DIAYNAgent(DDPGAgent):
         d_pred_log_softmax = F.log_softmax(d_pred, dim=1)
 
         if is_extra_mode:
-            div_sum = F.kl_div(d_pred_log_softmax, skill, reduction='sum')
-            reward = -div_sum / d_pred.shape[0]
+            reward = -F.kl_div(d_pred_log_softmax, skill, reduction='none').sum(axis=1)
         else:
             z_hat = torch.argmax(skill, dim=1)
             _, pred_z = torch.max(d_pred_log_softmax, dim=1, keepdim=True)
@@ -107,6 +106,9 @@ class DIAYNAgent(DDPGAgent):
                                         z_hat] - math.log(1 / self.skill_dim)
 
         reward = reward.reshape(-1, 1)
+
+        # clamp
+        reward = torch.clamp(reward, -10, 10)
 
         return reward * self.diayn_scale
 

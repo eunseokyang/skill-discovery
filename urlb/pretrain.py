@@ -137,14 +137,26 @@ class Workspace:
             self._extra_replay_iter = iter(self.extra_replay_loader)
         return self._extra_replay_iter
 
+    def save_tracking_csv(self, arr, dirname, fname, fmt):
+        save_txt_dir = (self.work_dir / dirname)
+        save_txt_dir.mkdir(exist_ok=True)
+        np.savetxt(save_txt_dir / f'{self.global_frame}_{fname}.csv', arr, fmt=fmt, delimiter=',')
+
     def eval(self, is_extra):
         step, episode, total_reward = 0, 0, 0
+        ## intrinsic reward
+        intrinsic_reward_list = []
+        intrinsic_total_reward = 0
+
         eval_until_episode = utils.Until(self.cfg.num_eval_episodes)
         if is_extra:
             meta = self.agent.init_extra_meta()
         else:
             meta = self.agent.init_meta()
         while eval_until_episode(episode):
+            ## for tracking intrinsic rewards
+            observations, skills = [], []
+
             time_step = self.eval_env.reset()
             self.video_recorder.init(self.eval_env, enabled=(episode == 0))
             while not time_step.last():
@@ -154,14 +166,27 @@ class Workspace:
                                             self.global_step,
                                             eval_mode=True)
                 time_step = self.eval_env.step(action)
+                observations.append(time_step.observation)
+                skills.append(meta['skill'])
                 self.video_recorder.record(self.eval_env)
                 total_reward += time_step.reward
                 step += 1
 
+            obs = torch.as_tensor(np.array(observations), device=self.device)
+            skills = torch.as_tensor(np.array(skills), device=self.device)
+            intrinsic_reward = self.agent.compute_intr_reward(skills, obs, None, is_extra).detach().cpu().squeeze(1).numpy()
+            intrinsic_reward_list.append(intrinsic_reward)
+
             episode += 1
             self.video_recorder.save(f'{self.global_frame}_extra_{is_extra}.mp4')
 
+        intrinsic_reward_list = np.array(intrinsic_reward_list)
+        intrinsic_total_reward = np.sum(intrinsic_reward_list)
+
+        self.save_tracking_csv(intrinsic_reward_list.T, dirname='intr_reward', fname=str(is_extra), fmt='%2.4f')
+
         with self.logger.log_and_dump_ctx(self.global_frame, ty='eval') as log:
+            log('episode_intrinsic_reward', intrinsic_total_reward / episode)
             log('episode_reward', total_reward / episode)
             log('episode_length', step * self.cfg.action_repeat / episode)
             log('episode', self.global_episode)

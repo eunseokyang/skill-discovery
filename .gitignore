@@ -1,8 +1,5 @@
 # Custom
-*.ipynb
-*.out
-models/
-exp_local/
+.vscode/
 
 # ---
 

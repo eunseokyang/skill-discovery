@@ -55,22 +55,33 @@ class DIAYNAgent(DDPGAgent):
     def get_meta_specs(self):
         return (specs.Array((self.skill_dim,), np.float32, 'skill'),)
 
-    def init_meta(self):
+    def init_meta(self, i=-1):
+        if i > -1:
+            return self.choose_meta(i)
         skill = np.zeros(self.skill_dim, dtype=np.float32)
         skill[np.random.choice(self.skill_dim)] = 1.0
         meta = OrderedDict()
         meta['skill'] = skill
         return meta
 
-    def update_meta(self, meta, global_step, time_step):
+    def choose_meta(self, i):
+        skill = np.zeros(self.skill_dim, dtype=np.float32)
+        skill[i] = 1.0
+        meta = OrderedDict()
+        meta['skill'] = skill
+        return meta
+
+    def update_meta(self, meta, global_step, time_step, skill=-1): 
         if global_step % self.update_skill_every_step == 0:
+            if skill > -1:
+                return self.choose_meta(skill)
             return self.init_meta()
         return meta
 
-    def update_diayn(self, skill, next_obs, step):
+    def update_diayn(self, skill, obs_diff, step):
         metrics = dict()
 
-        loss, df_accuracy = self.compute_diayn_loss(next_obs, skill)
+        loss, df_accuracy = self.compute_diayn_loss(obs_diff, skill)
 
         self.diayn_opt.zero_grad()
         if self.encoder_opt is not None:

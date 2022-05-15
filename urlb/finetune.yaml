@@ -15,10 +15,11 @@ num_train_frames: 2000010
 num_seed_frames: 4000
 # eval
 eval_every_frames: 10000
-num_eval_episodes: 10
+# num_eval_episodes: 10
+num_eval_episodes: 3
 # pretrained
 snapshot_ts: 100000
-snapshot_base_dir: ./pretrained_models
+snapshot_base_dir: ../../../models
 # replay buffer
 replay_buffer_size: 1000000
 replay_buffer_num_workers: 4
@@ -32,6 +33,8 @@ save_video: true
 save_train_video: false
 use_tb: false
 use_wandb: false
+
+skill_choice: -1
 # experiment
 experiment: exp
 

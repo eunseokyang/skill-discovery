@@ -114,7 +114,7 @@ class Workspace:
     def eval(self):
         step, episode, total_reward = 0, 0, 0
         eval_until_episode = utils.Until(self.cfg.num_eval_episodes)
-        meta = self.agent.init_meta()
+        meta = self.agent.init_meta(self.cfg.skill_choice)
         while eval_until_episode(episode):
             time_step = self.eval_env.reset()
             self.video_recorder.init(self.eval_env, enabled=(episode == 0))
@@ -149,7 +149,7 @@ class Workspace:
 
         episode_step, episode_reward = 0, 0
         time_step = self.train_env.reset()
-        meta = self.agent.init_meta()
+        meta = self.agent.init_meta(self.cfg.skill_choice)
         self.replay_storage.add(time_step, meta)
         self.train_video_recorder.init(time_step.observation)
         metrics = None
@@ -174,7 +174,7 @@ class Workspace:
 
                 # reset env
                 time_step = self.train_env.reset()
-                meta = self.agent.init_meta()
+                meta = self.agent.init_meta(self.cfg.skill_choice)
                 self.replay_storage.add(time_step, meta)
                 self.train_video_recorder.init(time_step.observation)
 
@@ -187,7 +187,7 @@ class Workspace:
                                 self.global_frame)
                 self.eval()
 
-            meta = self.agent.update_meta(meta, self.global_step, time_step)
+            meta = self.agent.update_meta(meta, self.global_step, time_step, self.cfg.skill_choice)
 
             if hasattr(self.agent, "regress_meta"):
                 repeat = self.cfg.action_repeat

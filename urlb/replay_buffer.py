@@ -42,7 +42,7 @@ class ReplayBufferStorage:
     def __len__(self):
         return self._num_transitions
 
-    def add(self, time_step, meta):
+    def add(self, time_step, meta, last=False):
         for key, value in meta.items():
             self._current_episode[key].append(value)
         for spec in self._data_specs:
@@ -51,7 +51,7 @@ class ReplayBufferStorage:
                 value = np.full(spec.shape, value, spec.dtype)
             assert spec.shape == value.shape and spec.dtype == value.dtype
             self._current_episode[spec.name].append(value)
-        if time_step.last():
+        if time_step.last() or last:
             episode = dict()
             for spec in self._data_specs:
                 value = self._current_episode[spec.name]

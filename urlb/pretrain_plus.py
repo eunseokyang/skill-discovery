@@ -179,7 +179,7 @@ class Workspace:
 
             observation_list.append(observations)
 
-            obs = torch.as_tensor(np.array(observations))
+            obs = torch.as_tensor(np.array(observations)).to(self.device)
             obs_diff = (obs[1:, :] - obs[:-1, :]).to(self.device)
             obs = obs[:-1, :].to(self.device)
             skills = torch.as_tensor(np.array(skills)[1:, :], device=self.device)
@@ -208,6 +208,17 @@ class Workspace:
             log('episode', self.global_episode)
             log('step', self.global_step)
 
+    def natural(self):
+        time_step = self.train_env.reset()
+        step = 0
+        while step < self.cfg.extra_train_step:
+            meta = self.agent.init_extra_meta()
+            self.extra_replay_storage.add(time_step, meta, False)
+            action = np.zeros(self.train_env.action_spec().shape).astype(np.float32)
+            time_step = self.train_env.step(action)
+            step += 1
+        self.extra_replay_storage.add(time_step, meta, True)
+
     def train(self):
         # predicates
         train_until_step = utils.Until(self.cfg.num_train_frames,
@@ -218,6 +229,10 @@ class Workspace:
                                       self.cfg.action_repeat)
         extra_every_step = utils.Every(self.cfg.extra_every_frames,
                                        self.cfg.action_repeat)
+        natrual_every_step = utils.Every(self.cfg.natural_every_frames,
+                                         self.cfg.action_repeat)
+        natural_until_frames = utils.Until(self.cfg.natural_until_frames,
+                                           self.cfg.action_repeat)
 
         episode_step, episode_reward = 0, 0
         time_step = self.train_env.reset()
@@ -255,6 +270,9 @@ class Workspace:
                     self.extra_mode = False
                     meta_use = self.agent.init_meta()
 
+                if natrual_every_step(self.global_step) and natural_until_frames(self.global_step):
+                    self.natural()
+
                 # reset env
                 time_step = self.train_env.reset()
                 self.replay_storage.add(time_step, meta_use, False)
@@ -272,7 +290,7 @@ class Workspace:
                 meta_use = extra_meta
 
             # try to evaluate
-            if eval_every_step(self.global_step):
+            if eval_every_step(self.global_step) and self.global_step > 0:
                 self.logger.log('eval_total_time', self.timer.total_time(),
                                 self.global_frame)
                 self.eval()

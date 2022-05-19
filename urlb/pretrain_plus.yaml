@@ -34,6 +34,8 @@ extra_batch_size: ${agent.extra_batch_size}
 extra_nstep: ${agent.nstep}
 extra_update_encoder: true
 ## extra
+natural_every_frames: 10000
+natural_until_frames: 300000
 extra_every_frames: 1000
 extra_train_step: 100
 

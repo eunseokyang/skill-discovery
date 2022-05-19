@@ -3,6 +3,7 @@
 *.out
 models/
 exp_local/
+private/
 
 # ---
 

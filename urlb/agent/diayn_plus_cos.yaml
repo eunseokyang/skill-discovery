@@ -1,6 +1,6 @@
 # @package agent
-_target_: agent.diayn_plus_pred.DIAYNAgent
-name: diayn_plus_pred
+_target_: agent.diayn_plus_cos.DIAYNAgent
+name: diayn_plus_cos
 reward_free: ${reward_free}
 obs_type: ??? # to be specified later
 obs_shape: ??? # to be specified later
@@ -24,4 +24,4 @@ batch_size: 1024
 init_critic: true
 update_encoder: ${update_encoder}
 
-natural_next_scale: 4.0
+natural_next_scale: 1.0

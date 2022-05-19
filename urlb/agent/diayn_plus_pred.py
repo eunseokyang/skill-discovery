@@ -45,11 +45,14 @@ class NaturalNext(nn.Module):
 
 class DIAYNAgent(DDPGAgent):
     def __init__(self, update_skill_every_step, skill_dim, diayn_scale,
-                 update_encoder, **kwargs):
+                 update_encoder, natural_next_scale, **kwargs):
         self.skill_dim = skill_dim
         self.update_skill_every_step = update_skill_every_step
         self.diayn_scale = diayn_scale
         self.update_encoder = update_encoder
+
+        self.natural_next_scale = natural_next_scale
+
         # increase obs shape to include skill dim
         kwargs["meta_dim"] = self.skill_dim
 
@@ -71,8 +74,19 @@ class DIAYNAgent(DDPGAgent):
         self.diayn_diff_opt = torch.optim.Adam(self.diayn_diff.parameters(), lr=self.lr)
         self.natural_next_opt = torch.optim.Adam(self.natural_next.parameters(), lr=self.lr)
 
+        # normalizer
+        self.normalizer = None
+        self.normalizer_exp = 0.9
+
         self.diayn_diff.train()
         self.natural_next.train()
+
+    def update_normalizer(self, obs_max):
+        with torch.no_grad():
+            if self.normalizer is None:
+                self.normalizer = obs_max
+            else:
+                self.normalizer = self.normalizer_exp*self.normalizer + (1 - self.normalizer_exp)*obs_max
 
     def get_meta_specs(self):
         return (specs.Array((self.skill_dim,), np.float32, 'skill'),)
@@ -156,22 +170,24 @@ class DIAYNAgent(DDPGAgent):
         reward_diayn_diff = reward_diayn_diff.reshape(-1, 1)
 
         # natural next
-        tmp_normalizer = torch.as_tensor([
-            1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1,
-            5, 3, 15, 30, 29,
-            41, 31, 30, 39
-        ], dtype=torch.float32, device=self.device)
-
+        # tmp_normalizer = torch.as_tensor([
+        #     1, 1, 1, 1, 1,
+        #     1, 1, 1, 1, 1,
+        #     1, 1, 1, 1, 1,
+        #     5, 3, 15, 30, 29,
+        #     41, 31, 30, 39
+        # ], dtype=torch.float32, device=self.device)
+        
+        obs_curr, obs_diff = obs_curr / self.normalizer, obs_diff / self.normalizer
+        
         d_pred = self.natural_next(obs_curr)
-        reward_natural_next = torch.sqrt(torch.sum(((d_pred - obs_diff)/tmp_normalizer) ** 2, axis=1))
+        reward_natural_next = torch.sqrt(torch.sum((d_pred - obs_diff) ** 2, axis=1) / (self.obs_dim - self.skill_dim))
         reward_natural_next = reward_natural_next.reshape(-1, 1)
 
         # total reward
         reward = reward_diayn_diff + reward_natural_next
 
-        return reward_diayn_diff*self.diayn_scale, reward_natural_next*self.diayn_scale
+        return reward_diayn_diff*self.diayn_scale, reward_natural_next*self.natural_next_scale
 
     def compute_diayn_diff_loss(self, state_diff, skill):
         """
@@ -190,12 +206,15 @@ class DIAYNAgent(DDPGAgent):
                                             pred_z.size())[0]
         return d_loss, df_accuracy
 
-    def compute_natural_next_loss(self, state_curr, state_diff):
+    def compute_natural_next_loss(self, obs, obs_diff):
         """
         DF Loss
         """
-        d_pred = self.natural_next(state_curr)
-        d_loss = self.natural_next_criterion(d_pred, state_diff)
+        
+        obs, obs_diff = obs / self.normalizer, obs_diff / self.normalizer
+
+        d_pred = self.natural_next(obs)
+        d_loss = self.natural_next_criterion(d_pred, obs_diff)
 
         return d_loss
 
@@ -220,6 +239,9 @@ class DIAYNAgent(DDPGAgent):
 
         obs_extra = self.aug_and_encode(obs_extra)
         next_obs_extra = self.aug_and_encode(next_obs_extra)
+
+        obs_max, _ = torch.max(torch.abs(obs), axis=0)
+        self.update_normalizer(obs_max)
 
         obs_diff = next_obs - obs
         obs_diff_extra = next_obs_extra - obs_extra

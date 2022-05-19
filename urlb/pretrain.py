@@ -140,6 +140,7 @@ class Workspace:
 
         eval_until_episode = utils.Until(self.cfg.num_eval_episodes)
         meta = self.agent.init_meta()
+        skill_num = np.argmax(meta['skill'])
         while eval_until_episode(episode):
             ## for tracking intrinsic rewards
             observations, skills = [], []
@@ -161,13 +162,19 @@ class Workspace:
 
             observation_list.append(observations)
 
-            obs = torch.as_tensor(np.array(observations), device=self.device)
-            skills = torch.as_tensor(np.array(skills), device=self.device)
-            intrinsic_reward = self.agent.compute_intr_reward(skills, obs, None).detach().cpu().squeeze(1).numpy()
-            intrinsic_reward_list.append(intrinsic_reward)
+            obs = torch.as_tensor(np.array(observations))
+            obs_diff = (obs[1:, :] - obs[:-1, :]).to(self.device)
+            obs = obs[1:, :].to(self.device)
+            skills = torch.as_tensor(np.array(skills)[1:, :], device=self.device)
+            with torch.no_grad():
+                intr_reward_diayn, intr_reward_diayn_diff = self.agent.compute_intr_reward(skills, obs, obs_diff, None)
+            intr_reward_diayn = intr_reward_diayn.detach().cpu().squeeze(1).numpy()
+            intr_reward_diayn_diff = intr_reward_diayn_diff.detach().cpu().squeeze(1).numpy()
+            intrinsic_reward_list.append(intr_reward_diayn)
+            intrinsic_reward_list.append(intr_reward_diayn_diff)
 
             episode += 1
-            self.video_recorder.save(f'{self.global_frame}.mp4')
+            self.video_recorder.save(f'{self.global_frame}_{skill_num}.mp4')
 
         intrinsic_reward_list = np.array(intrinsic_reward_list)
         intrinsic_total_reward = np.sum(intrinsic_reward_list)
